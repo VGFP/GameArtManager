@@ -39,7 +39,9 @@ namespace GameArtManager.Widgets
         protected override async void OnNavigatedTo(NavigationEventArgs e)
         {
             base.OnNavigatedTo(e);
-            if (!AppEngine.Instance.Library.Exists)
+            // direct System.IO may be denied even though the broker can see the folder
+            if (!AppEngine.Instance.Library.Exists &&
+                !await BrokerFs.FolderExistsAsync(AppEngine.Instance.Library.Root))
             {
                 SetStatus("Xbox app ThirdPartyLibraries folder not found - is the Xbox app installed? Also enable the file system permission in Windows Settings.");
                 return;
@@ -241,11 +243,11 @@ namespace GameArtManager.Widgets
 
         private async void BtnRestoreAll_Click(object sender, RoutedEventArgs e)
         {
-            await RunBusyAsync(() => Task.Run(() =>
+            await RunBusyAsync(async () =>
             {
-                var restored = AppEngine.Instance.RestoreAll();
+                var restored = await AppEngine.Instance.RestoreAllAsync();
                 SetStatus($"Restored {restored} originals.");
-            }));
+            });
         }
 
         private async void BtnOpenApp_Click(object sender, RoutedEventArgs e)
@@ -280,11 +282,11 @@ namespace GameArtManager.Widgets
         private async void BtnRestore_Click(object sender, RoutedEventArgs e)
         {
             if (_selected == null) return;
-            await RunBusyAsync(() => Task.Run(() =>
+            await RunBusyAsync(async () =>
             {
-                if (AppEngine.Instance.Restore(_selected.Entry))
+                if (await AppEngine.Instance.RestoreAsync(_selected.Entry))
                     SetStatus($"Restored original art for {_selected.Entry.DisplayName}.");
-            }));
+            });
         }
 
         private void BtnFixMatch_Click(object sender, RoutedEventArgs e)
