@@ -1,0 +1,41 @@
+# CI for GameArtManager (classic UWP C# app).
+# Runs on every push and pull request targeting main.
+
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+# Cancel superseded runs on the same ref to save runner minutes.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  secret-scan:
+    runs-on: ubuntu-latest
+    steps:
+      # gitleaks is free for public repositories.
+      # Scans every push so secrets never land in git history.
+      - uses: gitleaks/gitleaks-action@v2
+
+  build:
+    runs-on: windows-latest
+    needs: secret-scan
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: microsoft/setup-msbuild@v2
+
+      - name: Restore
+        run: msbuild GameArtManager.sln -t:Restore -p:Configuration=Debug -p:Platform=x64 -m
+
+      # Signing is disabled in CI: the signing key is developer-local and must
+      # never live in the repo or CI. This build exists to validate compilation
+      # of every push and PR; Debug|x64 exercises XAML + .NET compile without
+      # the slow .NET Native Release path.
+      - name: Build
+        run: msbuild GameArtManager.sln -p:Configuration=Debug -p:Platform=x64 -p:AppxPackageSigningEnabled=false -p:AppxBundle=Never -m
