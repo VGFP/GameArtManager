@@ -141,6 +141,7 @@
       <DependentUpon>App.xaml</DependentUpon>
     </Compile>
     <Compile Include="Core\AppEngine.cs" />
+    <Compile Include="Core\BrokerFs.cs" />
     <Compile Include="Core\GameVm.cs" />
     <Compile Include="Core\XboxLibrary.cs" />
     <Compile Include="Core\SgdbClient.cs" />

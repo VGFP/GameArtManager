@@ -69,11 +69,11 @@ namespace GameArtManager
                 DefaultButton = ContentDialogButton.Primary,
             };
             if (await dialog.ShowAsync() != ContentDialogResult.Primary) return;
-            await RunBusyAsync(() => Task.Run(() =>
+            await RunBusyAsync(async () =>
             {
-                var deleted = engine.CleanupOrphans(orphans);
+                var deleted = await engine.CleanupOrphansAsync(orphans);
                 SetStatus($"Deleted {deleted} orphaned entries.");
-            }));
+            });
         }
 
         private async void BtnFixPermission_Click(object sender, RoutedEventArgs e)
@@ -304,11 +304,11 @@ namespace GameArtManager
             };
             if (await dialog.ShowAsync() == ContentDialogResult.Primary)
             {
-                await RunBusyAsync(() => Task.Run(() =>
+                await RunBusyAsync(async () =>
                 {
-                    var restored = AppEngine.Instance.RestoreAll();
+                    var restored = await AppEngine.Instance.RestoreAllAsync();
                     SetStatus($"Restored {restored} originals.");
-                }));
+                });
             }
         }
 
@@ -410,11 +410,11 @@ namespace GameArtManager
         private async void BtnRestore_Click(object sender, RoutedEventArgs e)
         {
             if (_selected == null) return;
-            await RunBusyAsync(() => Task.Run(() =>
+            await RunBusyAsync(async () =>
             {
-                if (AppEngine.Instance.Restore(_selected.Entry))
+                if (await AppEngine.Instance.RestoreAsync(_selected.Entry))
                     SetStatus($"Restored original art for {_selected.Entry.DisplayName}.");
-            }));
+            });
         }
 
         private void BtnFixMatch_Click(object sender, RoutedEventArgs e)

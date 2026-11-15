@@ -50,30 +50,54 @@ namespace GameArtManager.Core
         }
 
         /// <summary>Load a game's cached art as a bitmap (plain file stream — avoids
-        /// StorageFile/broker quirks inside the app container).</summary>
+        /// StorageFile/broker quirks inside the app container). When direct access is
+        /// denied, falls back to opening the file through the Windows.Storage broker.</summary>
         public static async Task<BitmapImage> LoadThumbnailAsync(string path)
         {
+            if (string.IsNullOrEmpty(path)) return null;
             try
             {
-                if (string.IsNullOrEmpty(path) || !File.Exists(path)) return null;
-                using (var fs = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read))
-                using (var stream = fs.AsRandomAccessStream())
+                if (File.Exists(path))
                 {
-                    var bitmap = new BitmapImage();
-                    await bitmap.SetSourceAsync(stream);
-                    return bitmap;
+                    using (var fs = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read))
+                    using (var stream = fs.AsRandomAccessStream())
+                    {
+                        var bitmap = new BitmapImage();
+                        await bitmap.SetSourceAsync(stream);
+                        return bitmap;
+                    }
                 }
             }
             catch
             {
-                return null;
+                // direct access denied -> try the broker below
             }
+
+            try
+            {
+                var brokerStream = await BrokerFs.OpenReadAsync(path);
+                if (brokerStream != null)
+                {
+                    using (brokerStream)
+                    {
+                        var bitmap = new BitmapImage();
+                        await bitmap.SetSourceAsync(brokerStream);
+                        return bitmap;
+                    }
+                }
+            }
+            catch
+            {
+                // broker failed too
+            }
+            return null;
         }
 
         public async Task ScanAsync()
         {
             StatusMessage?.Invoke("Scanning Xbox app library…");
-            var entries = await Task.Run(() => Library.Scan());
+            // System.IO scan first, automatic broker fallback when it comes up empty
+            var entries = await Library.ScanWithFallbackAsync();
 
             // apply cached match info without touching the network
             foreach (var entry in entries)
@@ -125,6 +149,25 @@ namespace GameArtManager.Core
                 catch (Exception wex)
                 {
                     dump.AppendLine("write probe: FAILED - " + wex.GetType().Name + ": " + wex.Message);
+                }
+
+                // broker write probe: same check through the Windows.Storage broker
+                try
+                {
+                    var brokerProbe = Path.Combine(Library.Root, ".broker_probe");
+                    if (await BrokerFs.WriteAllBytesAsync(brokerProbe, System.Text.Encoding.UTF8.GetBytes("probe")))
+                    {
+                        await BrokerFs.DeleteFileAsync(brokerProbe);
+                        dump.AppendLine("broker write probe: SUCCESS");
+                    }
+                    else
+                    {
+                        dump.AppendLine("broker write probe: FAILED");
+                    }
+                }
+                catch (Exception bex)
+                {
+                    dump.AppendLine("broker write probe: FAILED - " + bex.GetType().Name + ": " + bex.Message);
                 }
 
                 foreach (var note in Library.LastScanNotes) dump.AppendLine("  " + note);
@@ -205,8 +248,10 @@ namespace GameArtManager.Core
                     if (art != null)
                     {
                         var png = await Imaging.DownloadSquarePngAsync(art.Url);
-                        Library.ReplaceImage(entry, png);
-                        applied++;
+                        if (await Library.ReplaceImageAsync(entry, png))
+                            applied++;
+                        else
+                            StatusMessage?.Invoke($"Failed to write artwork for {entry.DisplayName} - the Xbox cache folder is not writable.");
                     }
                     else
                     {
@@ -257,21 +302,20 @@ namespace GameArtManager.Core
             EnsureMatcher();
             Matcher.SetManual(entry, game);
             var png = await Imaging.DownloadSquarePngAsync(art.Url);
-            Library.ReplaceImage(entry, png);
+            if (!await Library.ReplaceImageAsync(entry, png))
+                StatusMessage?.Invoke($"Failed to write artwork for {entry.DisplayName} - the Xbox cache folder is not writable.");
             EntriesChanged?.Invoke();
         }
 
-        public Task UseCustomImageAsync(GameEntry entry, string imagePath)
+        public async Task UseCustomImageAsync(GameEntry entry, string imagePath)
         {
-            return Task.Run(() =>
-            {
-                var png = Imaging.FileToPng(imagePath);
-                Library.ReplaceImage(entry, png);
-                EntriesChanged?.Invoke();
-            });
+            var png = await Task.Run(() => Imaging.FileToPng(imagePath));
+            if (!await Library.ReplaceImageAsync(entry, png))
+                StatusMessage?.Invoke($"Failed to write artwork for {entry.DisplayName} - the Xbox cache folder is not writable.");
+            EntriesChanged?.Invoke();
         }
 
-        public bool Restore(GameEntry entry) => Library.RestoreOriginal(entry);
+        public async Task<bool> RestoreAsync(GameEntry entry) => await Library.RestoreOriginalAsync(entry);
 
         /// <summary>Clear a wrong match (cache + entry) so the game can be re-matched manually.</summary>
         public void ClearMatch(GameEntry entry)
@@ -284,24 +328,24 @@ namespace GameArtManager.Core
             EntriesChanged?.Invoke();
         }
 
-        public int RestoreAll()
+        public async Task<int> RestoreAllAsync()
         {
             var restored = 0;
             foreach (var entry in Entries.Where(e => e.Customized))
             {
-                if (Library.RestoreOriginal(entry)) restored++;
+                if (await Library.RestoreOriginalAsync(entry)) restored++;
             }
             EntriesChanged?.Invoke();
             return restored;
         }
 
         /// <summary>Delete orphaned cached-art files (games no longer tracked by the Xbox app).</summary>
-        public int CleanupOrphans(List<GameEntry> orphans)
+        public async Task<int> CleanupOrphansAsync(List<GameEntry> orphans)
         {
             var deleted = 0;
             foreach (var entry in orphans)
             {
-                if (Library.DeleteOrphanedFiles(entry))
+                if (await Library.DeleteOrphanedFilesAsync(entry))
                 {
                     Entries.Remove(entry);
                     deleted++;
