@@ -18,9 +18,22 @@ jobs:
   secret-scan:
     runs-on: ubuntu-latest
     steps:
-      # gitleaks is free for public repositories.
-      # Scans every push so secrets never land in git history.
-      - uses: gitleaks/gitleaks-action@v2
+      # Full history so gitleaks scans every commit, not just the checkout.
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      # Run the gitleaks binary directly (MIT-licensed). The gitleaks-action
+      # wrapper requires a GITLEAKS_LICENSE for personal accounts; the binary
+      # has no such restriction and scans every push/PR for leaked secrets.
+      - name: Install gitleaks
+        run: |
+          V=8.24.3
+          curl -sSL "https://github.com/gitleaks/gitleaks/releases/download/v${V}/gitleaks_${V}_linux_x64.tar.gz" \
+            | sudo tar xz -C /usr/local/bin gitleaks
+
+      - name: Scan git history for secrets
+        run: gitleaks detect --source . --redact --verbose
 
   build:
     runs-on: windows-latest
