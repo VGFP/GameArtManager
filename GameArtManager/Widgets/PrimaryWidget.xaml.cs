@@ -39,6 +39,8 @@ namespace GameArtManager.Widgets
         protected override async void OnNavigatedTo(NavigationEventArgs e)
         {
             base.OnNavigatedTo(e);
+            // gamepad/keyboard users need a focused control before D-pad navigation works
+            GamesList.Focus(FocusState.Programmatic);
             // direct System.IO may be denied even though the broker can see the folder
             if (!AppEngine.Instance.Library.Exists &&
                 !await BrokerFs.FolderExistsAsync(AppEngine.Instance.Library.Root))

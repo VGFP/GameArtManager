@@ -20,6 +20,10 @@ namespace GameArtManager
         public App()
         {
             InitializeComponent();
+            // Gamepad support (handhelds / Xbox full-screen experience): the left stick
+            // drives a pointer cursor and D-pad A/B work alongside normal mouse input.
+            // Desktop default is Mouse mode, which leaves the controller mostly inert.
+            RequiresPointerMode = Windows.UI.Xaml.ApplicationRequiresPointerMode.Auto;
             Suspending += OnSuspending;
             UnhandledException += OnUnhandledException;
         }
