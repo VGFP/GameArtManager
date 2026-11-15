@@ -1,0 +1,34 @@
+# Build output
+[Bb]in/
+[Oo]bj/
+AppPackages/
+BundleArtifacts/
+*.msix
+*.msixbundle
+*.msixupload
+*.appx
+*.appxbundle
+*.appxupload
+*.appxsym
+*.cer
+
+# Signing keys — NEVER commit
+*.pfx
+*.key
+*.snk
+
+# Local logs & state
+tools/deploy_log.txt
+tools/localstate_backup/
+*.log
+
+# Visual Studio
+.vs/
+*.user
+*.suo
+*.rsuser
+_IPYNE/
+*.vspx
+
+# Rider / other
+.idea/
