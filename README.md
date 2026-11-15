@@ -2,8 +2,7 @@
 
 Customize game artwork in the **Xbox PC app** library (and ROG Xbox Ally Full Screen
 Experience) with art from [SteamGridDB](https://www.steamgriddb.com) — as an **Xbox Game Bar
-widget** and as a standalone UWP app, with much better game detection than the
-[steamgriddb-xbox](https://github.com/lirrik/steamgriddb-xbox) widget it takes after.
+widget** and as a standalone UWP app.
 
 ## Features
 
