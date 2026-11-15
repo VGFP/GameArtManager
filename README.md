@@ -29,25 +29,58 @@ widget** and as a standalone UWP app.
 - A GitHub Actions workflow builds the project on every push — see
   `.github/workflows/build.yml`
 
-## Build & sideload
+## Build & install locally (sideload)
 
-```bat
-msbuild GameArtManager.sln -p:Configuration=Debug -p:Platform=x64 -p:AppxPackageSigningEnabled=true
-powershell -File tools\sign_and_deploy.ps1 [-CertPassword <pw>]     (run elevated: imports cert + frameworks + package)
+The app is not on the Microsoft Store yet — until it is, build and install it yourself.
+You sign it with a **local test certificate generated on your machine**; it is never
+committed to the repository, and every builder signs with their own.
+
+### Prerequisites
+
+- The build requirements above (Visual Studio 2022 + UWP workload)
+- **Admin rights**, needed once to trust the certificate during install
+- The Xbox app installed, with at least one Steam/GOG/Epic/Ubisoft/EA game in its library
+
+### 1. Build the package
+
+```powershell
+git clone https://github.com/VGFP/GameArtManager.git
+cd GameArtManager
+powershell -File tools\build_local.ps1
 ```
 
-`sign_and_deploy.ps1` takes an optional `-CertPassword` parameter (default empty — matching
-the certificate Visual Studio auto-generates) and auto-discovers the newest built
-`.msixbundle` under `AppPackages\`. It creates/uses the self-signed cert `CN=GameArtManager`
-(`GameArtManager_TemporaryKey.pfx`), imports it into *Trusted People*, installs the Debug
-frameworks (`Microsoft.NET.CoreRuntime.2.2` etc.) and registers the package. The `.pfx`
-signing key is generated locally by Visual Studio on first build and is never committed to
-the repository — every contributor signs with their own local test certificate. To redeploy
-after a rebuild: `tools\redeploy.ps1` (no elevation needed).
+`build_local.ps1` locates MSBuild, creates `GameArtManager_TemporaryKey.pfx` (a
+passwordless local signing certificate, generated once and gitignored), restores the
+NuGet packages and builds a **signed** Debug|x64 package under
+`GameArtManager\AppPackages\`.
 
-**File access (required once):** the app container needs direct access to the Xbox app's
-data folder and launcher data (Steam manifests, GOG Galaxy db). Some machines don't apply
-the `broadFileSystemAccess` Settings toggle correctly for sideloaded packages, so run:
+Prefer building inside Visual Studio? Open `GameArtManager.sln`, and in the manifest
+designer's *Packaging* tab choose the generated `.pfx` (or create a test certificate) —
+that writes `PackageCertificateKeyFile` into the csproj, so keep that local change out
+of your commits.
+
+### 2. Install
+
+From an **elevated** PowerShell:
+
+```powershell
+powershell -File tools\sign_and_deploy.ps1
+```
+
+It imports your local certificate into *Trusted People* (why admin is needed), installs
+the Debug framework dependencies (`Microsoft.NET.CoreRuntime.2.2` etc.) and registers
+the package. It auto-discovers the newest built `.msixbundle` and accepts an optional
+`-CertPassword` (default empty, matching the generated certificate). Prefer clicking?
+Run the `Add-AppDevPackage.ps1` inside the `AppPackages\..._Debug_Test` folder — same
+result.
+
+### 3. Grant file access (one-time)
+
+The app container needs direct access to the Xbox app's data folder and launcher data
+(Steam manifests, GOG Galaxy db). On first launch the app offers a shortcut to
+**Settings → Privacy & security → File system**. Some machines don't apply the
+`broadFileSystemAccess` toggle correctly for sideloaded packages — if scanning finds
+nothing, run:
 
 ```powershell
 powershell -File tools\grant_access.ps1
@@ -58,8 +91,22 @@ It grants the package's container SID read/modify access via ACLs on: the Xbox a
 `libraryfolders.vdf`** (C:/D:/E:/…), `C:\ProgramData\GOG.com` and the Epic manifests
 folder. Re-run it if the Xbox app updates and recreates its folder.
 
-Also note: inside an app container the `LOCALAPPDATA`/known-folder APIs are virtualized to
-the package folder — the code resolves all paths from fixed locations instead.
+### 4. First run
+
+Launch **GameArt Manager** from the Start menu, or add the widget (**Win+G** → widget
+menu → GameArt). Click **Match** — you'll be asked for a free
+[SteamGridDB](https://www.steamgriddb.com) API key (create an account → Preferences →
+API → generate). The key is stored in the Windows Credential Locker, never in a file.
+
+### Updating / uninstalling
+
+- After pulling new changes: rerun `tools\build_local.ps1`, then `tools\redeploy.ps1`
+  (no elevation needed) — it reinstalls while keeping your settings and match cache.
+- Uninstall like any app: Settings → Apps. Optionally remove the leftover test
+  certificate: `certlm.msc` → *Trusted People* → delete `GameArtManager`.
+
+> Note: inside an app container the `LOCALAPPDATA`/known-folder APIs are virtualized to
+> the package folder — the code resolves all paths from fixed locations instead.
 
 ## Using the Game Bar widget
 
