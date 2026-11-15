@@ -39,6 +39,8 @@ namespace GameArtManager
         {
             base.OnNavigatedTo(e);
             BtnFixPermission.Visibility = Visibility.Collapsed;
+            // gamepad/keyboard users need a focused control before D-pad navigation works
+            GamesList.Focus(FocusState.Programmatic);
             await RunBusyAsync(async () => await AppEngine.Instance.ScanAsync());
             if (AppEngine.Instance.Entries.Count == 0)
             {
