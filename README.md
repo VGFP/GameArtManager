@@ -122,21 +122,6 @@ The app keeps all data on the machine — game libraries, settings, match caches
 never leave it. The only exception is SteamGridDB API queries (game names/IDs + your API
 key). See [PRIVACY.md](PRIVACY.md) for the full policy.
 
-## Store submission checklist (when ready)
-
-1. Create a Microsoft Partner Center account and **reserve the app name**.
-2. Update the manifest Identity (`Name`/`Publisher`) to the reserved name + publisher ID.
-3. `tools\package_store.bat` → produces `.msixupload` (Release, .NET Native).
-4. In the submission's **Restricted capabilities** section, justify
-   `broadFileSystemAccess`, e.g.:
-   > The app's core function is replacing cached artwork files inside the Xbox console
-   > companion app's package data folder (`...\Microsoft.GamingApp_8wekyb3d8bbwe\LocalState\`),
-   > which is outside the calling app's own storage. No picker flow can express writing to
-   > another package's storage; broad file system access is required for the app to fulfill
-   > its single purpose.
-5. Provide a privacy policy URL (the app stores its settings/matches locally only) and
-   complete the age-rating questionnaire.
-
 ## Limitations
 
 - First-party Game Pass titles render art from Microsoft's catalog — not replaceable.
@@ -148,8 +133,7 @@ key). See [PRIVACY.md](PRIVACY.md) for the full policy.
 ## Credits
 
 Inspired by [lirrik/steamgriddb-xbox](https://github.com/lirrik/steamgriddb-xbox) and
-[tetraguy/Xbox-PC-Library-Art](https://github.com/tetraguy/Xbox-PC-Library-Art). GameArt
-Manager started as a Python prototype; this C# version superseded it. Not
+[tetraguy/Xbox-PC-Library-Art](https://github.com/tetraguy/Xbox-PC-Library-Art). Not
 affiliated with Microsoft, Valve or SteamGridDB; artwork belongs to its creators.
 
 ## License
