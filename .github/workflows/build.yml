@@ -36,7 +36,11 @@ jobs:
         run: gitleaks detect --source . --redact --verbose
 
   build:
-    runs-on: windows-latest
+    # Pinned: windows-latest now ships VS 18, which dropped the managed-UWP
+    # toolchain (the UAP 10.0.22621 platform SDK is absent and every
+    # Windows.UI.Xaml.* type fails to resolve). windows-2022 = VS 2022 with
+    # the UWP workload and matching Windows SDKs.
+    runs-on: windows-2022
     needs: secret-scan
     steps:
       - uses: actions/checkout@v4
