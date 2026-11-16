@@ -137,5 +137,29 @@ namespace GameArtManager.Core
         {
             return ConvertToPng(File.ReadAllBytes(path), maxSide);
         }
+
+        /// <summary>PNG-convert a user-picked file. The broker-backed StorageFile
+        /// stream is tried first: direct System.IO reads of picked files come back
+        /// "Access denied" when broadFileSystemAccess isn't effectively granted
+        /// (common on sideloaded machines) or when the picker grant can't be ACL'd
+        /// (e.g. exFAT drives) — the WinRT stream always works. Direct path access
+        /// stays as the fallback.</summary>
+        public static async Task<byte[]> FileToPngAsync(Windows.Storage.StorageFile file, int maxSide = 1024)
+        {
+            try
+            {
+                using (var stream = await file.OpenReadAsync())
+                using (var mem = new MemoryStream())
+                {
+                    await stream.AsStreamForRead().CopyToAsync(mem);
+                    return ConvertToPng(mem.ToArray(), maxSide);
+                }
+            }
+            catch (Exception)
+            {
+                // broker read denied too (rare) — last resort: direct path access
+            }
+            return FileToPng(file.Path, maxSide);
+        }
     }
 }

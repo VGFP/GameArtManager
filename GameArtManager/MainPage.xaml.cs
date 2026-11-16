@@ -6,6 +6,7 @@ using System.Threading.Tasks;
 using GameArtManager.Core;
 using Windows.UI.Xaml;
 using Windows.UI.Xaml.Controls;
+using Windows.UI.Xaml.Input;
 using Windows.UI.Xaml.Media.Imaging;
 using Windows.UI.Xaml.Navigation;
 
@@ -25,6 +26,10 @@ namespace GameArtManager
         // slow earlier load can never paint another game's data (selection race)
         private int _artLoadGen;
         private int _listGen;
+        // suppresses SelectionChanged reactions while the games list is rebuilt —
+        // Clear() fires SelectionChanged(null) which would otherwise clobber the
+        // selection made during the rebuild and drop the detail pane
+        private bool _rebuilding;
 
         public MainPage()
         {
@@ -33,6 +38,13 @@ namespace GameArtManager
             var engine = AppEngine.Instance;
             engine.EntriesChanged += Engine_OnEntriesChanged;
             engine.StatusMessage += msg => SetStatus(msg);
+            // PC gamepads do not get Xbox-style automatic UI navigation — translate the
+            // VirtualKey.Gamepad* events ourselves (full screen experience / handhelds)
+            Window.Current.CoreWindow.KeyDown += CoreWindow_KeyDown;
+            // after an FSE app switch nothing may be focused, which leaves the
+            // controller and keyboard dead — restore it
+            Window.Current.Activated += OnWindowActivated;
+            Loaded += (s, e) => RestoreFocus();
         }
 
         protected override async void OnNavigatedTo(NavigationEventArgs e)
@@ -40,12 +52,57 @@ namespace GameArtManager
             base.OnNavigatedTo(e);
             BtnFixPermission.Visibility = Visibility.Collapsed;
             // gamepad/keyboard users need a focused control before D-pad navigation works
-            GamesList.Focus(FocusState.Programmatic);
+            RestoreFocus();
             await RunBusyAsync(async () => await AppEngine.Instance.ScanAsync());
             if (AppEngine.Instance.Entries.Count == 0)
             {
                 BtnFixPermission.Visibility = Visibility.Visible;
             }
+        }
+
+        /// <summary>Focus the game list so D-pad / stick navigation has a start point.</summary>
+        private void RestoreFocus()
+        {
+            GamesList.Focus(FocusState.Programmatic);
+        }
+
+        private void OnWindowActivated(object sender, Windows.UI.Core.WindowActivatedEventArgs e)
+        {
+            if (e.WindowActivationState == Windows.UI.Core.CoreWindowActivationState.Deactivated) return;
+            if (FocusManager.GetFocusedElement() != null) return;
+            RestoreFocus();
+        }
+
+        private void CoreWindow_KeyDown(Windows.UI.Core.CoreWindow sender, Windows.UI.Core.KeyEventArgs args)
+        {
+            // D-pad / stick / A: PC gamepads need explicit focus translation
+            if (GamepadFocus.HandleKey(args.VirtualKey, ActivateGamepadItem))
+                args.Handled = true;
+        }
+
+        /// <summary>Gamepad A on a focused item: the game list selects, the search
+        /// results and artwork grid select the focused entry.</summary>
+        private bool ActivateGamepadItem(FrameworkElement container)
+        {
+            var vm = GamepadFocus.ItemOf(GamesList, container) as GameVm;
+            if (vm != null)
+            {
+                if (GamesList.SelectedItem != vm) GamesList.SelectedItem = vm;
+                return true;
+            }
+            var game = GamepadFocus.ItemOf(SearchResults, container) as SgdbGame;
+            if (game != null)
+            {
+                if (SearchResults.SelectedItem != game) SearchResults.SelectedItem = game;
+                return true;
+            }
+            var art = GamepadFocus.ItemOf(ArtResults, container) as ArtVm;
+            if (art != null)
+            {
+                if (ArtResults.SelectedItem != art) ArtResults.SelectedItem = art;
+                return true;
+            }
+            return false;
         }
 
         private void TglHideOrphaned_Click(object sender, RoutedEventArgs e)
@@ -132,6 +189,7 @@ namespace GameArtManager
             var selectedEntry = _selected?.Entry;
             var engine = AppEngine.Instance;
             var hideOrphans = TglHideOrphaned?.IsChecked == true;
+            _rebuilding = true;
             _games.Clear();
             foreach (var entry in engine.Entries.Where(e => !(hideOrphans && e.IsOrphaned)))
             {
@@ -140,12 +198,19 @@ namespace GameArtManager
                 _games.Add(vm);
             }
             if (gen != _listGen) return;
+            _rebuilding = false;
 
+            // honour the newest user selection — a game clicked during the rebuild
+            // must win over the entry captured when the rebuild started
+            var desiredEntry = _selected?.Entry ?? selectedEntry;
             GameVm reselect = null;
-            if (selectedEntry != null)
-                reselect = _games.FirstOrDefault(g => ReferenceEquals(g.Entry, selectedEntry));
-            if (reselect != null) GamesList.SelectedItem = reselect;
+            if (desiredEntry != null)
+                reselect = _games.FirstOrDefault(g => ReferenceEquals(g.Entry, desiredEntry));
+            GamesList.SelectedItem = reselect; // null also clears a stale selection
             RefreshDetail();
+            // a just-filled list may have nothing focused yet (an empty ListView
+            // cannot take focus) — give the controller/keyboard a start point
+            if (FocusManager.GetFocusedElement() == null) RestoreFocus();
         }
 
         private void RefreshGamesList()
@@ -158,6 +223,9 @@ namespace GameArtManager
             var vm = GamesList.SelectedItem as GameVm;
             if (vm == null)
             {
+                // a rebuild is in progress: its reselect at the end restores the
+                // selection — collapsing the pane here would flash the detail away
+                if (_rebuilding) return;
                 DetailPane.Visibility = Visibility.Collapsed;
                 return;
             }
@@ -373,6 +441,9 @@ namespace GameArtManager
 
         private void GamesList_SelectionChanged(object sender, SelectionChangedEventArgs e)
         {
+            // spurious events while the list is rebuilt (Clear / programmatic
+            // reselect) must not clobber the user's selection or detail state
+            if (_rebuilding) return;
             _selected = GamesList.SelectedItem as GameVm;
             RefreshDetail();
         }
@@ -402,10 +473,13 @@ namespace GameArtManager
 
             var file = await picker.PickSingleFileAsync();
             if (file == null) return;
+            // entry captured before the picker: _selected must not be re-read
+            // after the awaits (a list rebuild may have changed the selection)
+            var entry = _selected.Entry;
             await RunBusyAsync(async () =>
             {
-                await AppEngine.Instance.UseCustomImageAsync(_selected.Entry, file.Path);
-                SetStatus($"Custom artwork applied to {_selected.Entry.DisplayName}.");
+                await AppEngine.Instance.UseCustomImageAsync(entry, file);
+                SetStatus($"Custom artwork applied to {entry.DisplayName}.");
             });
         }
 
