@@ -8,10 +8,10 @@
             <RowDefinition Height="Auto" />
             <RowDefinition Height="*" />
             <RowDefinition Height="Auto" />
-            <RowDefinition Height="Auto" />
         </Grid.RowDefinitions>
 
-        <CommandBar Grid.Row="0" Background="Transparent" DefaultLabelPosition="Right" IsOpen="False">
+        <!-- List-mode command bar (hidden while the cover picker is open) -->
+        <CommandBar x:Name="MainBar" Grid.Row="0" Background="Transparent" DefaultLabelPosition="Right" IsOpen="False">
             <AppBarButton Icon="Refresh" Label="Scan" Click="BtnScan_Click" />
             <AppBarButton Icon="Sync" Label="Match" Click="BtnMatch_Click" />
             <AppBarButton Icon="Download" Label="Apply all" Click="BtnApplyAll_Click" />
@@ -20,11 +20,12 @@
             <AppBarButton Icon="OpenFile" Label="Full app" Click="BtnOpenApp_Click" />
         </CommandBar>
 
-        <!-- Game list card -->
-        <Border Grid.Row="1" Background="{StaticResource CardBrush}"
+        <!-- List mode: game list card fills the widget -->
+        <Border x:Name="ListPane" Grid.Row="1" Background="{StaticResource CardBrush}"
                 BorderBrush="{StaticResource CardEdgeBrush}" BorderThickness="1"
                 CornerRadius="8" Padding="4">
             <ListView x:Name="GamesList" SelectionMode="Single"
+                      IsItemClickEnabled="True" ItemClick="GamesList_ItemClick"
                       SelectionChanged="GamesList_SelectionChanged"
                       ItemContainerStyle="{StaticResource RoundedListCardItem}">
                 <ListView.ItemTemplate>
@@ -48,100 +49,125 @@
             </ListView>
         </Border>
 
-        <!-- Detail panel card -->
-        <StackPanel Grid.Row="2" x:Name="DetailPane" Visibility="Collapsed" Spacing="8" Margin="0,8,0,0">
-            <Border Background="{StaticResource CardBrush}"
-                    BorderBrush="{StaticResource CardEdgeBrush}" BorderThickness="1"
-                    CornerRadius="8" Padding="8">
-                <Grid>
-                    <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="Auto" />
-                        <ColumnDefinition Width="*" />
-                    </Grid.ColumnDefinitions>
-                    <Border Width="64" Height="64" CornerRadius="6" Background="#2A3038" Padding="2">
-                        <Image x:Name="DetailThumb" Stretch="Uniform" />
-                    </Border>
-                    <StackPanel Grid.Column="1" Margin="10,0,0,0" VerticalAlignment="Center">
-                        <TextBlock x:Name="DetailName" FontSize="13" FontWeight="SemiBold" TextWrapping="Wrap" />
-                        <TextBlock x:Name="DetailStatus" FontSize="11" Foreground="{StaticResource SubtleTextBrush}" />
-                        <StackPanel Orientation="Horizontal" Spacing="4" Margin="0,6,0,0">
-                            <Button x:Name="BtnApplyBest" Content="Apply best" Click="BtnApplyBest_Click" FontSize="12" />
-                            <Button x:Name="BtnRestore" Content="Restore" Click="BtnRestore_Click" FontSize="12" />
-                            <Button x:Name="BtnFixMatch" Content="Fix match…" Click="BtnFixMatch_Click" FontSize="12" />
-                        </StackPanel>
+        <!-- Cover mode: artwork picker for one game. Entered by activating a list
+             item; the Back button, gamepad B or Escape returns to the list. -->
+        <Grid x:Name="DetailPane" Grid.Row="1" Visibility="Collapsed">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="*" />
+            </Grid.RowDefinitions>
+
+            <Grid Grid.Row="0" ColumnSpacing="10" Margin="0,0,0,8">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="*" />
+                </Grid.ColumnDefinitions>
+                <Button x:Name="BtnBack" Click="BtnBack_Click" FontSize="12">
+                    <StackPanel Orientation="Horizontal" Spacing="6">
+                        <SymbolIcon Symbol="Back" />
+                        <TextBlock Text="Back to games" />
                     </StackPanel>
-                </Grid>
-            </Border>
+                </Button>
+                <TextBlock x:Name="DetailTitle" Grid.Column="1" FontSize="13" FontWeight="SemiBold"
+                           VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
+            </Grid>
 
-            <Border Background="{StaticResource CardBrush}"
-                    BorderBrush="{StaticResource CardEdgeBrush}" BorderThickness="1"
-                    CornerRadius="8" Padding="8">
-                <StackPanel Spacing="6">
-                    <Grid ColumnSpacing="4">
-                        <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="*" />
-                            <ColumnDefinition Width="Auto" />
-                        </Grid.ColumnDefinitions>
-                        <TextBox x:Name="SearchBox" PlaceholderText="Search SteamGridDB…" FontSize="12" CornerRadius="6"
-                                 KeyDown="SearchBox_KeyDown" />
-                        <Button Grid.Column="1" Content="Go" Click="BtnSearch_Click" FontSize="12" />
-                    </Grid>
-                    <Grid Height="84">
-                        <ListView x:Name="SearchResults" SelectionMode="Single"
-                                  SelectionChanged="SearchResults_SelectionChanged" FontSize="12"
-                                  ItemContainerStyle="{StaticResource RoundedListCardItem}">
-                            <ListView.ItemTemplate>
-                                <DataTemplate>
-                                    <Border Padding="6,3" CornerRadius="5">
-                                        <TextBlock Text="{Binding Name}" TextTrimming="CharacterEllipsis" />
-                                    </Border>
-                                </DataTemplate>
-                            </ListView.ItemTemplate>
-                        </ListView>
-                        <StackPanel x:Name="SearchLoading" Visibility="Collapsed"
-                                    HorizontalAlignment="Center" VerticalAlignment="Center" Spacing="6">
-                            <ProgressRing Width="22" Height="22" IsActive="True" />
-                            <TextBlock Text="Searching…" FontSize="11" Foreground="{StaticResource SubtleTextBrush}" />
+            <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto" ZoomMode="Disabled">
+                <StackPanel Spacing="8">
+                    <Border Background="{StaticResource CardBrush}"
+                            BorderBrush="{StaticResource CardEdgeBrush}" BorderThickness="1"
+                            CornerRadius="8" Padding="8">
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto" />
+                                <ColumnDefinition Width="*" />
+                            </Grid.ColumnDefinitions>
+                            <Border Width="64" Height="64" CornerRadius="6" Background="#2A3038" Padding="2">
+                                <Image x:Name="DetailThumb" Stretch="Uniform" />
+                            </Border>
+                            <StackPanel Grid.Column="1" Margin="10,0,0,0" VerticalAlignment="Center">
+                                <TextBlock x:Name="DetailName" FontSize="13" FontWeight="SemiBold" TextWrapping="Wrap" />
+                                <TextBlock x:Name="DetailStatus" FontSize="11" Foreground="{StaticResource SubtleTextBrush}" />
+                                <StackPanel Orientation="Horizontal" Spacing="4" Margin="0,6,0,0">
+                                    <Button x:Name="BtnApplyBest" Content="Apply best" Click="BtnApplyBest_Click" FontSize="12" />
+                                    <Button x:Name="BtnRestore" Content="Restore" Click="BtnRestore_Click" FontSize="12" />
+                                    <Button x:Name="BtnFixMatch" Content="Fix match…" Click="BtnFixMatch_Click" FontSize="12" />
+                                </StackPanel>
+                            </StackPanel>
+                        </Grid>
+                    </Border>
+
+                    <Border Background="{StaticResource CardBrush}"
+                            BorderBrush="{StaticResource CardEdgeBrush}" BorderThickness="1"
+                            CornerRadius="8" Padding="8">
+                        <StackPanel Spacing="6">
+                            <Grid ColumnSpacing="4">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+                                <TextBox x:Name="SearchBox" PlaceholderText="Search SteamGridDB…" FontSize="12" CornerRadius="6"
+                                         KeyDown="SearchBox_KeyDown" />
+                                <Button Grid.Column="1" Content="Go" Click="BtnSearch_Click" FontSize="12" />
+                            </Grid>
+                            <Grid Height="84">
+                                <ListView x:Name="SearchResults" SelectionMode="Single"
+                                          SelectionChanged="SearchResults_SelectionChanged" FontSize="12"
+                                          ItemContainerStyle="{StaticResource RoundedListCardItem}">
+                                    <ListView.ItemTemplate>
+                                        <DataTemplate>
+                                            <Border Padding="6,3" CornerRadius="5">
+                                                <TextBlock Text="{Binding Name}" TextTrimming="CharacterEllipsis" />
+                                            </Border>
+                                        </DataTemplate>
+                                    </ListView.ItemTemplate>
+                                </ListView>
+                                <StackPanel x:Name="SearchLoading" Visibility="Collapsed"
+                                            HorizontalAlignment="Center" VerticalAlignment="Center" Spacing="6">
+                                    <ProgressRing Width="22" Height="22" IsActive="True" />
+                                    <TextBlock Text="Searching…" FontSize="11" Foreground="{StaticResource SubtleTextBrush}" />
+                                </StackPanel>
+                            </Grid>
                         </StackPanel>
-                    </Grid>
-                </StackPanel>
-            </Border>
+                    </Border>
 
-            <Border Background="{StaticResource CardBrush}"
-                    BorderBrush="{StaticResource CardEdgeBrush}" BorderThickness="1"
-                    CornerRadius="8" Padding="8">
-                <StackPanel Spacing="6">
-                    <Grid Height="150">
-                        <GridView x:Name="ArtResults" SelectionMode="Single"
-                                  SelectionChanged="ArtResults_SelectionChanged"
-                                  ItemContainerStyle="{StaticResource RoundedArtCardItem}">
-                            <GridView.ItemTemplate>
-                                <DataTemplate x:DataType="core:ArtVm">
-                                    <Border Width="96" Height="96" CornerRadius="8" Background="#2A3038"
-                                            BorderBrush="{StaticResource CardEdgeBrush}" BorderThickness="1" Padding="3">
-                                        <Image Stretch="Uniform" Source="{x:Bind Thumb, Mode=OneWay}" />
-                                    </Border>
-                                </DataTemplate>
-                            </GridView.ItemTemplate>
-                        </GridView>
-                        <StackPanel x:Name="ArtLoading" Visibility="Collapsed"
-                                    HorizontalAlignment="Center" VerticalAlignment="Center" Spacing="6">
-                            <ProgressRing Width="28" Height="28" IsActive="True" />
-                            <TextBlock Text="Loading artwork…" FontSize="11" Foreground="{StaticResource SubtleTextBrush}" />
+                    <Border Background="{StaticResource CardBrush}"
+                            BorderBrush="{StaticResource CardEdgeBrush}" BorderThickness="1"
+                            CornerRadius="8" Padding="8">
+                        <StackPanel Spacing="6">
+                            <Grid Height="150">
+                                <GridView x:Name="ArtResults" SelectionMode="Single"
+                                          SelectionChanged="ArtResults_SelectionChanged"
+                                          ItemContainerStyle="{StaticResource RoundedArtCardItem}">
+                                    <GridView.ItemTemplate>
+                                        <DataTemplate x:DataType="core:ArtVm">
+                                            <Border Width="96" Height="96" CornerRadius="8" Background="#2A3038"
+                                                    BorderBrush="{StaticResource CardEdgeBrush}" BorderThickness="1" Padding="3">
+                                                <Image Stretch="Uniform" Source="{x:Bind Thumb, Mode=OneWay}" />
+                                            </Border>
+                                        </DataTemplate>
+                                    </GridView.ItemTemplate>
+                                </GridView>
+                                <StackPanel x:Name="ArtLoading" Visibility="Collapsed"
+                                            HorizontalAlignment="Center" VerticalAlignment="Center" Spacing="6">
+                                    <ProgressRing Width="28" Height="28" IsActive="True" />
+                                    <TextBlock Text="Loading artwork…" FontSize="11" Foreground="{StaticResource SubtleTextBrush}" />
+                                </StackPanel>
+                                <TextBlock x:Name="ArtEmpty" Visibility="Collapsed" Text="No artwork available"
+                                           FontSize="11" Foreground="{StaticResource FaintTextBrush}"
+                                           HorizontalAlignment="Center" VerticalAlignment="Center" />
+                            </Grid>
+                            <Button x:Name="BtnUseArt" Content="Use selected artwork" Click="BtnUseArt_Click" FontSize="12"
+                                    HorizontalAlignment="Left" />
+                            <TextBlock FontSize="10" Foreground="{StaticResource FaintTextBrush}"
+                                       Text="Custom images from disk: use the Full app button." />
                         </StackPanel>
-                        <TextBlock x:Name="ArtEmpty" Visibility="Collapsed" Text="No artwork available"
-                                   FontSize="11" Foreground="{StaticResource SubtleTextBrush}"
-                                   HorizontalAlignment="Center" VerticalAlignment="Center" />
-                    </Grid>
-                    <Button x:Name="BtnUseArt" Content="Use selected artwork" Click="BtnUseArt_Click" FontSize="12"
-                            HorizontalAlignment="Left" />
-                    <TextBlock FontSize="10" Foreground="{StaticResource FaintTextBrush}"
-                               Text="Custom images from disk: use the Full app button." />
+                    </Border>
                 </StackPanel>
-            </Border>
-        </StackPanel>
+            </ScrollViewer>
+        </Grid>
 
-        <Grid Grid.Row="3" Margin="0,6,0,0" ColumnSpacing="8">
+        <Grid Grid.Row="2" Margin="0,6,0,0" ColumnSpacing="8">
             <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="Auto" />
                 <ColumnDefinition Width="*" />

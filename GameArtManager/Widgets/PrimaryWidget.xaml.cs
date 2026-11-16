@@ -22,6 +22,9 @@ namespace GameArtManager.Widgets
         private GameEntry _searchContextEntry;
         private readonly List<ArtVm> _artItems = new List<ArtVm>();
         private bool _busy;
+        // game id whose artwork is currently in the grid; avoids a refetch when the
+        // same game's cover picker is re-opened
+        private long? _artLoadedForGameId;
         // generation tokens: async UI population checks its token after every await so a
         // slow earlier load can never paint another game's data (selection race)
         private int _artLoadGen;
@@ -34,13 +37,17 @@ namespace GameArtManager.Widgets
             var engine = AppEngine.Instance;
             engine.EntriesChanged += Engine_OnEntriesChanged;
             engine.StatusMessage += msg => SetStatus(msg);
+            // gamepad B / Escape / system back all leave cover mode
+            PreviewKeyDown += Page_PreviewKeyDown;
+            Windows.UI.Core.SystemNavigationManager.GetForCurrentView().BackRequested += Page_BackRequested;
         }
 
         protected override async void OnNavigatedTo(NavigationEventArgs e)
         {
             base.OnNavigatedTo(e);
             // gamepad/keyboard users need a focused control before D-pad navigation works
-            GamesList.Focus(FocusState.Programmatic);
+            if (DetailPane.Visibility == Visibility.Visible) BtnBack.Focus(FocusState.Programmatic);
+            else GamesList.Focus(FocusState.Programmatic);
             // direct System.IO may be denied even though the broker can see the folder
             if (!AppEngine.Instance.Library.Exists &&
                 !await BrokerFs.FolderExistsAsync(AppEngine.Instance.Library.Root))
@@ -111,12 +118,14 @@ namespace GameArtManager.Widgets
             var vm = GamesList.SelectedItem as GameVm;
             if (vm == null)
             {
-                DetailPane.Visibility = Visibility.Collapsed;
+                // selected game vanished (e.g. list rebuild): leave cover mode
+                if (DetailPane.Visibility == Visibility.Visible) BackToList();
                 return;
             }
-            DetailPane.Visibility = Visibility.Visible;
+
             DetailThumb.Source = vm.Thumb;
             DetailName.Text = vm.Entry.DisplayName;
+            DetailTitle.Text = vm.Entry.DisplayName;
             DetailStatus.Text = $"{vm.Entry.Platform.ToUpper()}  -  {vm.StatusText}";
             BtnApplyBest.IsEnabled = vm.Entry.SgdbId.HasValue;
             BtnRestore.IsEnabled = vm.Entry.Customized;
@@ -133,11 +142,15 @@ namespace GameArtManager.Widgets
                 ResetArtGrid();
             }
 
-            // auto-load available SteamGridDB art for matched games
+            // artwork is only fetched while the cover picker is actually open —
+            // moving through the list must not fire a network load per game
+            if (DetailPane.Visibility != Visibility.Visible) return;
+
             if (vm.Entry.SgdbId.HasValue)
             {
                 _selectedSearchGame = new SgdbGame { Id = vm.Entry.SgdbId.Value, Name = vm.Entry.DisplayName };
-                _ = LoadArtGridAsync(vm.Entry.SgdbId.Value);
+                if (_artLoadedForGameId != vm.Entry.SgdbId.Value)
+                    _ = LoadArtGridAsync(vm.Entry.SgdbId.Value);
             }
             else
             {
@@ -151,6 +164,7 @@ namespace GameArtManager.Widgets
         private void ResetArtGrid()
         {
             _artLoadGen++;
+            _artLoadedForGameId = null;
             _artItems.Clear();
             ArtResults.ItemsSource = null;
             BtnUseArt.IsEnabled = false;
@@ -178,6 +192,7 @@ namespace GameArtManager.Widgets
                 }
                 if (gen != _artLoadGen) return;
                 ArtResults.ItemsSource = _artItems;
+                _artLoadedForGameId = gameId;
                 SetStatus($"{_artItems.Count} tile options available.");
                 BtnUseArt.IsEnabled = ArtResults.SelectedItem != null;
             }
@@ -270,6 +285,57 @@ namespace GameArtManager.Widgets
             RefreshDetail();
         }
 
+        private void GamesList_ItemClick(object sender, ItemClickEventArgs e)
+        {
+            // activating a game (click / gamepad A / Enter) opens its cover picker
+            _selected = e.ClickedItem as GameVm;
+            if (GamesList.SelectedItem != _selected)
+                GamesList.SelectedItem = _selected;
+            EnterDetailMode();
+        }
+
+        private void EnterDetailMode()
+        {
+            MainBar.Visibility = Visibility.Collapsed;
+            ListPane.Visibility = Visibility.Collapsed;
+            DetailPane.Visibility = Visibility.Visible;
+            RefreshDetail();
+            // land on Back so D-pad starts at the top of the picker and B exits
+            BtnBack.Focus(FocusState.Programmatic);
+        }
+
+        private void BackToList()
+        {
+            DetailPane.Visibility = Visibility.Collapsed;
+            ListPane.Visibility = Visibility.Visible;
+            MainBar.Visibility = Visibility.Visible;
+            GamesList.Focus(FocusState.Programmatic);
+        }
+
+        private void BtnBack_Click(object sender, RoutedEventArgs e)
+        {
+            BackToList();
+        }
+
+        private void Page_PreviewKeyDown(object sender, Windows.UI.Xaml.Input.KeyRoutedEventArgs e)
+        {
+            if ((e.Key == Windows.System.VirtualKey.GamepadB || e.Key == Windows.System.VirtualKey.Escape)
+                && DetailPane.Visibility == Visibility.Visible)
+            {
+                e.Handled = true;
+                BackToList();
+            }
+        }
+
+        private void Page_BackRequested(object sender, Windows.UI.Core.BackRequestedEventArgs e)
+        {
+            if (DetailPane.Visibility == Visibility.Visible)
+            {
+                e.Handled = true;
+                BackToList();
+            }
+        }
+
         private async void BtnApplyBest_Click(object sender, RoutedEventArgs e)
         {
             var engine = AppEngine.Instance;
@@ -306,7 +372,7 @@ namespace GameArtManager.Widgets
             _selected.Refresh();
 
             SearchBox.Text = name != "Unknown" ? name : "";
-            SearchBox.Focus(FocusState.Pointer);
+            SearchBox.Focus(FocusState.Programmatic);
             SetStatus($"Match cleared for {name}. Type the correct name, pick the right game, then its artwork.");
         }
 
