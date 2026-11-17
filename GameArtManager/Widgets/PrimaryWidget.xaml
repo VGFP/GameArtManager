@@ -171,10 +171,13 @@
             <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="Auto" />
                 <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="Auto" />
             </Grid.ColumnDefinitions>
             <ProgressRing x:Name="Progress" Width="18" Height="18" IsActive="False" />
             <TextBlock Grid.Column="1" x:Name="StatusText" VerticalAlignment="Center" FontSize="11"
                        Foreground="#B7BFC9" TextWrapping="Wrap" />
+            <TextBlock Grid.Column="2" x:Name="VersionText" VerticalAlignment="Center" FontSize="10"
+                       Foreground="{StaticResource FaintTextBrush}" />
         </Grid>
     </Grid>
 </Page>

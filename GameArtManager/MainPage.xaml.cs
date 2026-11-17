@@ -45,6 +45,9 @@ namespace GameArtManager
             // controller and keyboard dead — restore it
             Window.Current.Activated += OnWindowActivated;
             Loaded += (s, e) => RestoreFocus();
+            // version badge (lower-right corner)
+            var v = Windows.ApplicationModel.Package.Current.Id.Version;
+            VersionText.Text = $"v{v.Major}.{v.Minor}.{v.Build}";
         }
 
         protected override async void OnNavigatedTo(NavigationEventArgs e)
