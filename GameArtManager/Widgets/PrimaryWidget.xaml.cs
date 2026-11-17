@@ -7,6 +7,7 @@ using GameArtManager.Core;
 using Microsoft.Gaming.XboxGameBar;
 using Windows.UI.Xaml;
 using Windows.UI.Xaml.Controls;
+using Windows.UI.Xaml.Input;
 using Windows.UI.Xaml.Media.Imaging;
 using Windows.UI.Xaml.Navigation;
 
@@ -29,6 +30,10 @@ namespace GameArtManager.Widgets
         // slow earlier load can never paint another game's data (selection race)
         private int _artLoadGen;
         private int _listGen;
+        // suppresses SelectionChanged reactions while the games list is rebuilt —
+        // Clear() fires SelectionChanged(null) which would otherwise yank the user
+        // out of the cover picker and clobber the selection made during the rebuild
+        private bool _rebuilding;
 
         public PrimaryWidget()
         {
@@ -40,14 +45,32 @@ namespace GameArtManager.Widgets
             // gamepad B / Escape / system back all leave cover mode
             PreviewKeyDown += Page_PreviewKeyDown;
             Windows.UI.Core.SystemNavigationManager.GetForCurrentView().BackRequested += Page_BackRequested;
+            // PC gamepads do not get Xbox-style automatic UI navigation — translate the
+            // VirtualKey.Gamepad* events ourselves (full screen experience / handhelds)
+            Window.Current.CoreWindow.KeyDown += CoreWindow_KeyDown;
+            // after an FSE app switch or Game Bar re-activation nothing may be focused,
+            // which leaves the controller and keyboard dead — restore it
+            Window.Current.Activated += OnWindowActivated;
+            Loaded += (s, e) => RestoreFocus();
+            // version badge (lower-right corner)
+            var v = Windows.ApplicationModel.Package.Current.Id.Version;
+            VersionText.Text = $"v{v.Major}.{v.Minor}.{v.Build}";
         }
 
         protected override async void OnNavigatedTo(NavigationEventArgs e)
         {
             base.OnNavigatedTo(e);
             // gamepad/keyboard users need a focused control before D-pad navigation works
-            if (DetailPane.Visibility == Visibility.Visible) BtnBack.Focus(FocusState.Programmatic);
-            else GamesList.Focus(FocusState.Programmatic);
+            RestoreFocus();
+            // selecting GameArt re-creates this page every time — the engine keeps the
+            // scanned entries for the process lifetime, so only scan when there is
+            // nothing to show yet; otherwise repaint instantly with the previous
+            // selection instead of resetting to the top of the list
+            if (AppEngine.Instance.Entries.Count > 0)
+            {
+                RefreshGamesList();
+                return;
+            }
             // direct System.IO may be denied even though the broker can see the folder
             if (!AppEngine.Instance.Library.Exists &&
                 !await BrokerFs.FolderExistsAsync(AppEngine.Instance.Library.Root))
@@ -91,21 +114,33 @@ namespace GameArtManager.Widgets
         private async Task RefreshGamesAsync()
         {
             var gen = ++_listGen;
-            var selectedEntry = _selected?.Entry;
+            var engine = AppEngine.Instance;
+            // fresh page instance (Game Bar re-created the widget): fall back to the
+            // engine's last selection so the list opens where the user left off
+            var selectedEntry = _selected?.Entry
+                ?? engine.Entries.FirstOrDefault(en => en.CacheKey == engine.LastSelectedCacheKey);
+            _rebuilding = true;
             _games.Clear();
-            foreach (var entry in AppEngine.Instance.Entries.Where(e => !e.IsOrphaned))
+            foreach (var entry in engine.Entries.Where(e => !e.IsOrphaned))
             {
                 var vm = await GameVm.CreateAsync(entry);
                 if (gen != _listGen) return; // a newer refresh superseded this one
                 _games.Add(vm);
             }
             if (gen != _listGen) return;
+            _rebuilding = false;
 
+            // honour the newest user selection — a game clicked during the rebuild
+            // must win over the entry captured when the rebuild started
+            var desiredEntry = _selected?.Entry ?? selectedEntry;
             GameVm reselect = null;
-            if (selectedEntry != null)
-                reselect = _games.FirstOrDefault(g => ReferenceEquals(g.Entry, selectedEntry));
-            if (reselect != null) GamesList.SelectedItem = reselect;
+            if (desiredEntry != null)
+                reselect = _games.FirstOrDefault(g => ReferenceEquals(g.Entry, desiredEntry));
+            GamesList.SelectedItem = reselect; // null also clears a stale selection
             RefreshDetail();
+            // a just-filled list may have nothing focused yet (an empty ListView
+            // cannot take focus) — give the controller/keyboard a start point
+            if (FocusManager.GetFocusedElement() == null) RestoreFocus();
         }
 
         private void RefreshGamesList()
@@ -118,6 +153,9 @@ namespace GameArtManager.Widgets
             var vm = GamesList.SelectedItem as GameVm;
             if (vm == null)
             {
+                // a rebuild is in progress: its reselect at the end restores the
+                // selection — leaving cover mode here would kick the user out
+                if (_rebuilding) return;
                 // selected game vanished (e.g. list rebuild): leave cover mode
                 if (DetailPane.Visibility == Visibility.Visible) BackToList();
                 return;
@@ -127,6 +165,8 @@ namespace GameArtManager.Widgets
             DetailName.Text = vm.Entry.DisplayName;
             DetailTitle.Text = vm.Entry.DisplayName;
             DetailStatus.Text = $"{vm.Entry.Platform.ToUpper()}  -  {vm.StatusText}";
+            // remember across surface re-creations (widget closed / re-opened)
+            AppEngine.Instance.LastSelectedCacheKey = vm.Entry.CacheKey;
             BtnApplyBest.IsEnabled = vm.Entry.SgdbId.HasValue;
             BtnRestore.IsEnabled = vm.Entry.Customized;
 
@@ -281,6 +321,9 @@ namespace GameArtManager.Widgets
 
         private void GamesList_SelectionChanged(object sender, SelectionChangedEventArgs e)
         {
+            // spurious events while the list is rebuilt (Clear / programmatic
+            // reselect) must not clobber the user's selection or detail state
+            if (_rebuilding) return;
             _selected = GamesList.SelectedItem as GameVm;
             RefreshDetail();
         }
@@ -301,7 +344,7 @@ namespace GameArtManager.Widgets
             DetailPane.Visibility = Visibility.Visible;
             RefreshDetail();
             // land on Back so D-pad starts at the top of the picker and B exits
-            BtnBack.Focus(FocusState.Programmatic);
+            RestoreFocus();
         }
 
         private void BackToList()
@@ -309,7 +352,64 @@ namespace GameArtManager.Widgets
             DetailPane.Visibility = Visibility.Collapsed;
             ListPane.Visibility = Visibility.Visible;
             MainBar.Visibility = Visibility.Visible;
-            GamesList.Focus(FocusState.Programmatic);
+            RestoreFocus();
+        }
+
+        /// <summary>Focus the list, or Back when the cover picker is open.</summary>
+        private void RestoreFocus()
+        {
+            if (DetailPane.Visibility == Visibility.Visible) BtnBack.Focus(FocusState.Programmatic);
+            else GamesList.Focus(FocusState.Programmatic);
+        }
+
+        private void OnWindowActivated(object sender, Windows.UI.Core.WindowActivatedEventArgs e)
+        {
+            if (e.WindowActivationState == Windows.UI.Core.CoreWindowActivationState.Deactivated) return;
+            if (FocusManager.GetFocusedElement() != null) return;
+            RestoreFocus();
+        }
+
+        private void CoreWindow_KeyDown(Windows.UI.Core.CoreWindow sender, Windows.UI.Core.KeyEventArgs args)
+        {
+            // gamepad B leaves cover mode (handled before the key reaches XAML)
+            if (args.VirtualKey == Windows.System.VirtualKey.GamepadB)
+            {
+                if (DetailPane.Visibility == Visibility.Visible)
+                {
+                    args.Handled = true;
+                    BackToList();
+                }
+                return;
+            }
+            // D-pad / stick / A: PC gamepads need explicit focus translation
+            if (GamepadFocus.HandleKey(args.VirtualKey, ActivateGamepadItem))
+                args.Handled = true;
+        }
+
+        /// <summary>Gamepad A on a focused item: GamesList opens the cover picker,
+        /// the search results and artwork grid select the focused entry.</summary>
+        private bool ActivateGamepadItem(FrameworkElement container)
+        {
+            var vm = GamepadFocus.ItemOf(GamesList, container) as GameVm;
+            if (vm != null)
+            {
+                if (GamesList.SelectedItem != vm) GamesList.SelectedItem = vm;
+                EnterDetailMode();
+                return true;
+            }
+            var game = GamepadFocus.ItemOf(SearchResults, container) as SgdbGame;
+            if (game != null)
+            {
+                if (SearchResults.SelectedItem != game) SearchResults.SelectedItem = game;
+                return true;
+            }
+            var art = GamepadFocus.ItemOf(ArtResults, container) as ArtVm;
+            if (art != null)
+            {
+                if (ArtResults.SelectedItem != art) ArtResults.SelectedItem = art;
+                return true;
+            }
+            return false;
         }
 
         private void BtnBack_Click(object sender, RoutedEventArgs e)
@@ -319,7 +419,8 @@ namespace GameArtManager.Widgets
 
         private void Page_PreviewKeyDown(object sender, Windows.UI.Xaml.Input.KeyRoutedEventArgs e)
         {
-            if ((e.Key == Windows.System.VirtualKey.GamepadB || e.Key == Windows.System.VirtualKey.Escape)
+            // Escape leaves cover mode; gamepad B is handled in CoreWindow_KeyDown
+            if (e.Key == Windows.System.VirtualKey.Escape
                 && DetailPane.Visibility == Visibility.Visible)
             {
                 e.Handled = true;

@@ -15,7 +15,12 @@ if (-not (Test-Path $pfx)) {
 }
 
 # VS auto-generated certificates have an empty password, so $CertPassword = "" is valid.
-$securePassword = ConvertTo-SecureString -String $CertPassword -Force -AsPlainText
+# ConvertTo-SecureString rejects empty strings — build one manually instead.
+if ([string]::IsNullOrEmpty($CertPassword)) {
+    $securePassword = New-Object System.Security.SecureString
+} else {
+    $securePassword = ConvertTo-SecureString -String $CertPassword -Force -AsPlainText
+}
 
 Start-Transcript -Path "$PSScriptRoot\deploy_log.txt" -Force
 

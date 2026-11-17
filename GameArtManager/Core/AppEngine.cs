@@ -24,6 +24,12 @@ namespace GameArtManager.Core
         public event Action EntriesChanged;
         public event Action<string> StatusMessage;
 
+        /// <summary>CacheKey of the game last selected in any surface (widget / main
+        /// window). Surfaces are re-created on every open (Game Bar widget lifetime) —
+        /// they use this to restore the previous selection instead of resetting to the
+        /// top of the list.</summary>
+        public string LastSelectedCacheKey { get; set; }
+
         private readonly MatchCache _cache = new MatchCache();
 
         private AppEngine()
@@ -307,9 +313,12 @@ namespace GameArtManager.Core
             EntriesChanged?.Invoke();
         }
 
-        public async Task UseCustomImageAsync(GameEntry entry, string imagePath)
+        /// <summary>Apply a user-picked image. The picked StorageFile is read through
+        /// its own (broker-backed) stream — direct System.IO access to it is denied on
+        /// machines where broadFileSystemAccess isn't effectively granted.</summary>
+        public async Task UseCustomImageAsync(GameEntry entry, StorageFile file)
         {
-            var png = await Task.Run(() => Imaging.FileToPng(imagePath));
+            var png = await Imaging.FileToPngAsync(file);
             if (!await Library.ReplaceImageAsync(entry, png))
                 StatusMessage?.Invoke($"Failed to write artwork for {entry.DisplayName} - the Xbox cache folder is not writable.");
             EntriesChanged?.Invoke();

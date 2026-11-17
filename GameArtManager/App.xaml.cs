@@ -20,9 +20,10 @@ namespace GameArtManager
         public App()
         {
             InitializeComponent();
-            // Gamepad support (handhelds / Xbox full-screen experience): the left stick
-            // drives a pointer cursor and D-pad A/B work alongside normal mouse input.
-            // Desktop default is Mouse mode, which leaves the controller mostly inert.
+            // Gamepad pointer mode is an Xbox-device-family feature only — Windows
+            // ignores it, so on PCs (handhelds / full screen experience) the pages
+            // translate VirtualKey.Gamepad* events themselves (Core.GamepadFocus).
+            // Keep Auto so a real Xbox console still gets its system behaviour.
             RequiresPointerMode = Windows.UI.Xaml.ApplicationRequiresPointerMode.Auto;
             Suspending += OnSuspending;
             UnhandledException += OnUnhandledException;
