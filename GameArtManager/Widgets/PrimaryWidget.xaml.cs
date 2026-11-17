@@ -59,6 +59,15 @@ namespace GameArtManager.Widgets
             base.OnNavigatedTo(e);
             // gamepad/keyboard users need a focused control before D-pad navigation works
             RestoreFocus();
+            // selecting GameArt re-creates this page every time — the engine keeps the
+            // scanned entries for the process lifetime, so only scan when there is
+            // nothing to show yet; otherwise repaint instantly with the previous
+            // selection instead of resetting to the top of the list
+            if (AppEngine.Instance.Entries.Count > 0)
+            {
+                RefreshGamesList();
+                return;
+            }
             // direct System.IO may be denied even though the broker can see the folder
             if (!AppEngine.Instance.Library.Exists &&
                 !await BrokerFs.FolderExistsAsync(AppEngine.Instance.Library.Root))
@@ -102,10 +111,14 @@ namespace GameArtManager.Widgets
         private async Task RefreshGamesAsync()
         {
             var gen = ++_listGen;
-            var selectedEntry = _selected?.Entry;
+            var engine = AppEngine.Instance;
+            // fresh page instance (Game Bar re-created the widget): fall back to the
+            // engine's last selection so the list opens where the user left off
+            var selectedEntry = _selected?.Entry
+                ?? engine.Entries.FirstOrDefault(en => en.CacheKey == engine.LastSelectedCacheKey);
             _rebuilding = true;
             _games.Clear();
-            foreach (var entry in AppEngine.Instance.Entries.Where(e => !e.IsOrphaned))
+            foreach (var entry in engine.Entries.Where(e => !e.IsOrphaned))
             {
                 var vm = await GameVm.CreateAsync(entry);
                 if (gen != _listGen) return; // a newer refresh superseded this one
@@ -149,6 +162,8 @@ namespace GameArtManager.Widgets
             DetailName.Text = vm.Entry.DisplayName;
             DetailTitle.Text = vm.Entry.DisplayName;
             DetailStatus.Text = $"{vm.Entry.Platform.ToUpper()}  -  {vm.StatusText}";
+            // remember across surface re-creations (widget closed / re-opened)
+            AppEngine.Instance.LastSelectedCacheKey = vm.Entry.CacheKey;
             BtnApplyBest.IsEnabled = vm.Entry.SgdbId.HasValue;
             BtnRestore.IsEnabled = vm.Entry.Customized;
 

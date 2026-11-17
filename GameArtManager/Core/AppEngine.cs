@@ -24,6 +24,12 @@ namespace GameArtManager.Core
         public event Action EntriesChanged;
         public event Action<string> StatusMessage;
 
+        /// <summary>CacheKey of the game last selected in any surface (widget / main
+        /// window). Surfaces are re-created on every open (Game Bar widget lifetime) —
+        /// they use this to restore the previous selection instead of resetting to the
+        /// top of the list.</summary>
+        public string LastSelectedCacheKey { get; set; }
+
         private readonly MatchCache _cache = new MatchCache();
 
         private AppEngine()

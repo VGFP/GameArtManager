@@ -53,6 +53,14 @@ namespace GameArtManager
             BtnFixPermission.Visibility = Visibility.Collapsed;
             // gamepad/keyboard users need a focused control before D-pad navigation works
             RestoreFocus();
+            // re-opening the window must not reset it: the engine keeps the scanned
+            // entries for the process lifetime, so only scan when there is nothing
+            // to show yet; otherwise repaint instantly with the previous selection
+            if (AppEngine.Instance.Entries.Count > 0)
+            {
+                RefreshGamesList();
+                return;
+            }
             await RunBusyAsync(async () => await AppEngine.Instance.ScanAsync());
             if (AppEngine.Instance.Entries.Count == 0)
             {
@@ -188,6 +196,10 @@ namespace GameArtManager
             var gen = ++_listGen;
             var selectedEntry = _selected?.Entry;
             var engine = AppEngine.Instance;
+            // fresh page instance: fall back to the engine's last selection so the
+            // list opens where the user left off instead of at the top
+            if (selectedEntry == null && engine.LastSelectedCacheKey != null)
+                selectedEntry = engine.Entries.FirstOrDefault(en => en.CacheKey == engine.LastSelectedCacheKey);
             var hideOrphans = TglHideOrphaned?.IsChecked == true;
             _rebuilding = true;
             _games.Clear();
@@ -234,6 +246,8 @@ namespace GameArtManager
             DetailName.Text = vm.Entry.DisplayName;
             DetailId.Text = vm.Entry.FullId + (vm.Entry.ImagePath != null ? "\n" + vm.Entry.ImagePath : "");
             DetailStatus.Text = vm.StatusText;
+            // remember across window re-creations (full app closed / re-opened)
+            AppEngine.Instance.LastSelectedCacheKey = vm.Entry.CacheKey;
             BtnApplyBest.IsEnabled = vm.Entry.SgdbId.HasValue;
             BtnRestore.IsEnabled = vm.Entry.Customized;
 
