@@ -146,20 +146,33 @@ namespace GameArtManager.Core
         /// stays as the fallback.</summary>
         public static async Task<byte[]> FileToPngAsync(Windows.Storage.StorageFile file, int maxSide = 1024)
         {
+            byte[] data;
             try
             {
                 using (var stream = await file.OpenReadAsync())
                 using (var mem = new MemoryStream())
                 {
                     await stream.AsStreamForRead().CopyToAsync(mem);
-                    return ConvertToPng(mem.ToArray(), maxSide);
+                    data = mem.ToArray();
                 }
             }
-            catch (Exception)
+            catch (Exception streamEx)
             {
-                // broker read denied too (rare) — last resort: direct path access
+                // stream read failed (should not happen for picker-granted files) —
+                // last resort: direct path access; surface BOTH reasons, the path
+                // error alone ("Access to the path ... is denied") is misleading
+                try
+                {
+                    return FileToPng(file.Path, maxSide);
+                }
+                catch (Exception pathEx)
+                {
+                    throw new UnauthorizedAccessException(
+                        $"Could not read '{file.Name}': {streamEx.Message} / {pathEx.Message}", pathEx);
+                }
             }
-            return FileToPng(file.Path, maxSide);
+            // conversion errors (unsupported/corrupt image) surface as-is
+            return ConvertToPng(data, maxSide);
         }
     }
 }
